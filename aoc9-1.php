@@ -1,58 +1,45 @@
 <?php
 
-$disk = str_split(file_get_contents(__DIR__ . '/day9.txt'));
-$diskLength = count($disk);
-$isFileLength = false;
-$partition = [];
+require_once __DIR__ . '/aoc9-common.php';
 
-$fileId = -1;
-
-for ($i = 0; $i < $diskLength; $i++) {
-    $isFileLength = !$isFileLength;
-    $fileId += (int) $isFileLength;
-    $value = $disk[$i];
-
-    for ($j = 0; $j < $value; $j++) {
-        $partition[] = [
-            'type' => $isFileLength ? 'file' : 'free',
-            'id' => $isFileLength ? $fileId : null
-        ];
-    }
-}
-
-$free = array_filter($partition, fn (array $sector) => $sector['type'] === 'free');
-$files = array_filter($partition, fn (array $sector) => $sector['type'] === 'file');
-
-function gapsExist(array $partition): bool
+/**
+ * Part 1: Defragment per block
+ */
+class PerBlockDefragmenter implements DefragmentationMethod
 {
-    $gaps = 0;
-    $partitionCount = count($partition);
+    private function gapsExist(Filesystem $filesystem): bool
+    {
+        $gaps = 0;
+        $partitionCount = count($filesystem->getPartition());
 
-    for ($i = 0; $i < ($partitionCount - 1); $i++) {
-        if ($partition[$i]['type'] === 'file' && $partition[$i + 1]['type'] === 'free') {
-            $gaps++;
-            if ($gaps > 1) return true;
+        for ($i = 0; $i < ($partitionCount - 1); $i++) {
+            if ($filesystem->getSector($i) instanceof File && $filesystem->getSector($i + 1) instanceof FreeSpace) {
+                $gaps++;
+                if ($gaps > 1) return true;
+            }
+        }
+
+        return false;
+    }
+
+    public function defragment(Filesystem $filesystem): void
+    {
+        $free = $filesystem->getFreeSpace();
+        $files = $filesystem->getFiles();
+
+        while ($this->gapsExist($filesystem)) {
+            $freeData = reset($free);
+            $freeIdx = key($free);
+            unset($free[$freeIdx]);
+            $fileData = end($files);
+            $fileIdx = key($files);
+            unset($files[$fileIdx]);
+            $filesystem->setSector($freeIdx, $fileData);
+            $filesystem->setSector($fileIdx, $freeData);
         }
     }
-
-    return false;
 }
 
-while (gapsExist($partition)) {
-    $freeData = reset($free);
-    $freeIdx = key($free);
-    unset($free[$freeIdx]);
-    $fileData = end($files);
-    $fileIdx = key($files);
-    unset($files[$fileIdx]);
-    $partition[$freeIdx] = $fileData;
-    $partition[$fileIdx] = $freeData;
-}
+$filesystem = new Filesystem(__DIR__ . '/day9.txt', new PerBlockDefragmenter());
 
-$sum = 0;
-
-foreach (array_filter($partition, fn (array $sector) => $sector['type'] === 'file') as $index => $file) {
-    $sum += ($index * $file['id']);
-}
-
-echo $sum . "\n";
+echo $filesystem->defragment()->getChecksum() . "\n";

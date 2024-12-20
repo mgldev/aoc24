@@ -1,80 +1,73 @@
 <?php
 
-$disk = str_split(file_get_contents(__DIR__ . '/day9.txt'));
-$diskLength = count($disk);
-$isFileLength = false;
-$partition = [];
+require_once __DIR__ . '/aoc9-common.php';
 
-$fileId = -1;
-
-for ($i = 0; $i < $diskLength; $i++) {
-    $isFileLength = !$isFileLength;
-    $fileId += (int) $isFileLength;
-    $value = $disk[$i];
-
-    for ($j = 0; $j < $value; $j++) {
-        $partition[] = [
-            'type' => $isFileLength ? 'file' : 'free',
-            'id' => $isFileLength ? $fileId : null
-        ];
-    }
-}
-
-$partitionSize = count($partition);
-$free = array_filter($partition, fn (array $sector) => $sector['type'] === 'free');
-$files = array_filter($partition, fn (array $sector) => $sector['type'] === 'file');
-
-$fullFileMap = [];
-
-foreach ($files as $index => $file) {
-    $fileId = $file['id'];
-    if (!isset($fullFileMap[$fileId])) {
-        $fullFileMap[$fileId] = [
-            'indexes' => [], 
-            'size' => 0
-        ];
-    }
-    $fullFileMap[$fileId]['indexes'][] = $index;
-    $fullFileMap[$fileId]['size']++;
-    rsort($fullFileMap[$fileId]['indexes']);
-}
-
-krsort($fullFileMap);
-
-function isFreeSpace(int $startIndex, int $endIndex, array $partition): bool
+/**
+ * Part 1: Defragment per full file
+ */
+class PerFileDefragmenter implements DefragmentationMethod
 {
-    for ($x = $startIndex; $x < $endIndex; $x++) {
-        if ($partition[$x]['type'] !== 'free') {
-            return false;
-        }
-    }
+    public function defragment(Filesystem $filesystem): void
+    {
+        $fileMap = $this->buildFileMap($filesystem);
 
-    return true;
-}
-
-foreach ($fullFileMap as $fileID => $file) {
-    $requiredSpace = $file['size'];
-    $indexes = $file['indexes'];
-    $firstFileIndex = min($file['indexes']);
-
-    for ($x = 0; $x < $firstFileIndex; $x++) {
-        if (isFreeSpace($x, $x + $requiredSpace, $partition)) {
-            for ($i = $x; $i < ($x + $requiredSpace); $i++) {
-                foreach ($indexes as $fileIndex) {
-                    $fs = $partition[$i];
-                    $partition[$i] = $partition[$fileIndex];
-                    $partition[$fileIndex] = $fs;
+        foreach ($fileMap as $fileID => $file) {
+            $requiredSpace = $file['size'];
+            $indexes = $file['indexes'];
+            $firstFileIndex = min($file['indexes']);
+        
+            for ($x = 0; $x < $firstFileIndex; $x++) {
+                if ($this->isFreeSpace($filesystem, $x, $x + $requiredSpace)) {
+                    for ($i = $x; $i < ($x + $requiredSpace); $i++) {
+                        foreach ($indexes as $fileIndex) {
+                            $freeSpace = $filesystem->getSector($i);
+                            $file = $filesystem->getSector($fileIndex);
+                            $filesystem->setSector($i, $file);
+                            $filesystem->setSector($fileIndex, $freeSpace);
+                        }
+                    }
+                    break;
                 }
             }
-            break;
         }
+    }
+
+    private function buildFileMap(Filesystem $filesystem): array
+    {
+        $fullFileMap = [];
+
+        foreach ($filesystem->getFiles() as $index => $file) {
+            $fileId = $file->getId();
+
+            if (!isset($fullFileMap[$fileId])) {
+                $fullFileMap[$fileId] = [
+                    'indexes' => [], 
+                    'size' => 0
+                ];
+            }
+
+            $fullFileMap[$fileId]['indexes'][] = $index;
+            $fullFileMap[$fileId]['size']++;
+            rsort($fullFileMap[$fileId]['indexes']);
+        }
+
+        krsort($fullFileMap);
+
+        return $fullFileMap;
+    }
+
+    private function isFreeSpace(Filesystem $filesystem, int $startIndex, int $endIndex): bool
+    {
+        for ($x = $startIndex; $x < $endIndex; $x++) {
+            if ($filesystem->getSector($x) instanceof File) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }
 
-$sum = 0;
+$filesystem = new Filesystem(__DIR__ . '/day9.txt', new PerFileDefragmenter());
 
-foreach (array_filter($partition, fn (array $sector) => $sector['type'] === 'file') as $index => $file) {
-    $sum += ($index * $file['id']);
-}
-
-echo $sum . "\n";
+echo $filesystem->defragment()->getChecksum() . "\n";
