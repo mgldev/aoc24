@@ -3,7 +3,7 @@
 require_once __DIR__ . '/aoc9-common.php';
 
 /**
- * Part 1: Defragment per full file
+ * Part 2: Defragment per full file
  */
 class PerFileDefragmenter implements DefragmentationMethod
 {
